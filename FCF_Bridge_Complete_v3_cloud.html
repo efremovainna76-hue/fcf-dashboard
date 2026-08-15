@@ -1,0 +1,1240 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FCF Bridge — полная карта (данные + трансформация)</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #898781;
+    --grid: #e1e0d9;
+    --border: rgba(11,11,11,0.10);
+    --wf-total: #2a78d6;
+    --wf-pos: #008300;
+    --wf-neg: #e34948;
+    --good-text: #006300;
+    --good-bg: rgba(0,131,0,0.10);
+    --pending-text: #9a6b00;
+    --pending-bg: rgba(212,140,20,0.15);
+    --none-text: #6b6a66;
+    --none-bg: rgba(107,106,102,0.10);
+    --accent-bg: #eef4fc;
+    --gantt-bar: #cbd2da;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --grid: #2c2c2a;
+    --border: rgba(255,255,255,0.10);
+    --wf-total: #3987e5;
+    --wf-pos: #0ca30c;
+    --wf-neg: #e66767;
+    --good-text: #4ad04a;
+    --good-bg: rgba(12,163,12,0.16);
+    --pending-text: #e0b34a;
+    --pending-bg: rgba(212,140,20,0.18);
+    --none-text: #b3b2ad;
+    --none-bg: rgba(179,178,173,0.14);
+    --accent-bg: #17233a;
+    --gantt-bar: #494b4f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19; --page: #0d0d0d; --text-primary: #ffffff;
+      --text-secondary: #c3c2b7; --text-muted: #898781; --grid: #2c2c2a;
+      --border: rgba(255,255,255,0.10); --wf-total: #3987e5; --wf-pos: #0ca30c;
+      --wf-neg: #e66767; --good-text: #4ad04a; --good-bg: rgba(12,163,12,0.16);
+      --pending-text: #e0b34a; --pending-bg: rgba(212,140,20,0.18);
+      --none-text: #b3b2ad; --none-bg: rgba(179,178,173,0.14); --accent-bg: #17233a;
+      --gantt-bar: #494b4f;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; background: var(--page); color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 13px;
+  }
+  #app { max-width: 1180px; margin: 0 auto; padding: 12px 18px 32px; }
+
+  header.topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 14px; flex-wrap: wrap; margin-bottom: 10px; position: sticky; top: 0;
+    background: var(--page); padding: 7px 0; z-index: 5; border-bottom: 1px solid var(--grid);
+  }
+  header.topbar h1 { font-size: 15.5px; margin: 0; }
+  header.topbar .sub { color: var(--text-secondary); font-size: 10.5px; margin-top: 2px; max-width: 580px; line-height: 1.35; }
+  .topbar-controls { display: flex; align-items: center; gap: 8px; }
+  .topbar-controls label { font-size: 11px; color: var(--text-secondary); }
+  select#ownerFilter {
+    font-family: inherit; font-size: 11px; padding: 4px 7px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);
+  }
+
+  button {
+    font-family: inherit; font-size: 11.5px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface-1);
+    color: var(--text-primary); border-radius: 6px; padding: 4px 9px;
+  }
+  button:hover { filter: brightness(0.97); }
+  [data-theme="dark"] button:hover { filter: brightness(1.15); }
+
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 15px; margin-bottom: 10px;
+  }
+  .card h2 { font-size: 12.5px; margin: 0 0 3px; }
+  .card .card-sub { font-size: 10px; color: var(--text-muted); margin-bottom: 8px; line-height: 1.35; }
+
+  #problem-text {
+    width: 100%; font-family: inherit; font-size: 11.5px; line-height: 1.45;
+    color: var(--text-primary); background: var(--page); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; resize: vertical;
+  }
+  #problem-text:focus { outline: 2px solid var(--wf-total); outline-offset: 1px; }
+
+  .ring-row { display: flex; gap: 16px; flex-wrap: wrap; }
+  .ring-tile { display: flex; align-items: center; gap: 10px; }
+  .ring {
+    width: 52px; height: 52px; border-radius: 50%; flex: none;
+    background: conic-gradient(var(--ring-color) calc(var(--pct) * 1%), var(--grid) 0);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ring-inner {
+    width: 40px; height: 40px; border-radius: 50%; background: var(--surface-1);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 11.5px;
+  }
+  .ring-label .title { font-size: 11px; font-weight: 600; margin-bottom: 2px; }
+  .ring-label .breakdown { font-size: 9.5px; color: var(--text-muted); line-height: 1.4; }
+  .ring-label .breakdown b { color: var(--text-secondary); font-weight: 600; }
+
+  table.totals { width: 100%; border-collapse: collapse; font-size: 11px; }
+  table.totals th {
+    text-align: right; font-size: 9px; text-transform: uppercase; color: var(--text-muted);
+    border-bottom: 1px solid var(--grid); padding: 3px 7px; font-weight: 600;
+  }
+  table.totals th:first-child, table.totals td:first-child { text-align: left; }
+  table.totals td { text-align: right; padding: 4px 7px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+  table.totals tr.hl td { font-weight: 700; background: var(--good-bg); }
+  table.totals td.delta-ok { color: var(--good-text); font-weight: 600; }
+  table.totals td.delta-bad { color: var(--wf-neg); font-weight: 600; }
+  table.totals td.na { color: var(--text-muted); font-style: italic; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  thead th { text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: .02em; color: var(--text-muted); border-bottom: 1px solid var(--grid); padding: 4px 7px; font-weight: 600; white-space: nowrap; }
+  thead th.num { text-align: right; }
+  tbody td { padding: 4px 7px; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+  tbody td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+  tbody tr.computed-row td { font-weight: 600; background: var(--good-bg); }
+  tbody tr:hover td { background: var(--accent-bg); }
+
+  .cell-wrap { display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
+  .status-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; border: 1.5px solid var(--none-text); background: transparent; }
+  .status-dot.done { background: var(--wf-pos); border-color: var(--wf-pos); }
+  .status-dot.in_progress { background: var(--pending-text); border-color: var(--pending-text); }
+  .status-dot.todo { background: transparent; border-color: var(--none-text); }
+  .status-dot.clickable { cursor: pointer; }
+  .status-dot.clickable:hover { transform: scale(1.35); }
+  .status-badge-mini { display: inline-block; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 999px; }
+  .status-badge-mini.clickable { cursor: pointer; border: 1.5px solid transparent; }
+  .status-badge-mini.clickable:hover { filter: brightness(0.93); border-color: currentColor; }
+  .status-badge-mini.clickable:active { transform: scale(0.96); }
+
+  input.owner-input, input.val-input, input.reg-input, input.reg-date, select.reg-select {
+    font-family: inherit; font-size: 11px; padding: 4px 7px; width: 100%;
+    min-width: 90px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--page); color: var(--text-primary);
+  }
+  input.val-input { min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
+  input.reg-date { min-width: 118px; }
+  input.reg-input { min-width: 220px; }
+  input.owner-input:focus, input.val-input:focus, input.reg-input:focus, input.reg-date:focus, select.reg-select:focus { outline: 2px solid var(--wf-total); outline-offset: 1px; }
+  .owner-cell { position: relative; }
+  .saved-hint { position: absolute; right: -2px; top: -16px; font-size: 9.5px; color: var(--good-text); opacity: 0; transition: opacity .25s ease; }
+  .saved-hint.show { opacity: 1; }
+
+  .legend { display: flex; gap: 12px; font-size: 10.5px; color: var(--text-secondary); flex-wrap: wrap; align-items: center; }
+  .legend .sw-circle { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+  .footnote { font-size: 9.5px; color: var(--text-muted); margin-top: 6px; font-style: italic; }
+
+  /* ---- full build table (EBITDA/NOPAT/FCF composition, always visible) ---- */
+  #full-table-wrap table { font-size: 11px; }
+  #full-table-wrap thead th { font-size: 9.5px; padding: 4px 6px; white-space: normal; }
+  #full-table-wrap tbody td { padding: 2.5px 6px; }
+  #full-table-wrap .cell-wrap { gap: 4px; }
+  #full-table-wrap .status-dot { width: 8px; height: 8px; border-width: 1.5px; }
+  #full-table-wrap input.val-input { font-size: 11px; min-width: 44px; padding: 2px 4px; }
+  #full-table-wrap input.owner-input { font-size: 11px; padding: 2px 5px; min-width: 90px; }
+  #full-table-wrap .status-badge-mini { font-size: 9.5px; padding: 1px 6px; }
+  tr.group-hdr td { background: transparent; font-weight: 600; font-size: 9.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); padding: 6px 6px 2px; border-top: none; border-bottom: none; }
+  tr.row-ebitda td { background: var(--accent-bg); font-weight: 700; border-top: 1px solid var(--wf-total); border-bottom: 1px solid var(--wf-total); }
+  tr.row-nopat td { color: var(--text-muted); font-style: italic; }
+  tr.row-fcf td { background: var(--good-bg); font-weight: 700; border-top: 1px solid var(--wf-pos); border-bottom: 1px solid var(--wf-pos); }
+  .bridge-tag { font-size: 9px; font-weight: 600; color: var(--wf-total); margin-left: 6px; text-transform: none; letter-spacing: 0; }
+  .init-pill { display: inline-block; font-size: 9px; font-weight: 700; padding: 0 5px; border-radius: 999px; margin-left: 4px; background: var(--pending-bg); color: var(--pending-text); cursor: pointer; text-decoration: none; white-space: nowrap; }
+  .init-pill:hover { filter: brightness(0.95); text-decoration: underline; }
+  .init-pill.auto { background: var(--accent-bg); color: var(--wf-total); }
+  tr.gantt-flash, .gantt-flash { animation: gantt-flash 1.6s ease; }
+  @keyframes gantt-flash { 0%, 100% { outline: none; } 15%, 55% { outline: 2px solid var(--wf-total); outline-offset: -2px; } }
+
+  /* ---- transformation gantt (initiatives) — date-based % positioning ---- */
+  .gantt2 { position: relative; font-size: 10px; padding-top: 22px; }
+  .gantt2-tick { position: absolute; top: 22px; bottom: 0; width: 1px; background: var(--grid); z-index: 1; }
+  .gantt2-month-tick { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--text-primary); opacity: 0.32; z-index: 2; }
+  .gantt2-month-label { position: absolute; top: 0; height: 20px; display: flex; align-items: center; font-size: 10px; font-weight: 700; color: var(--text-primary); background: var(--page); padding: 0 4px; white-space: nowrap; z-index: 3; }
+  .gantt2-today { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--wf-neg); z-index: 4; pointer-events: none; }
+  .gantt2-today-label { position: absolute; top: 0; font-size: 8.5px; font-weight: 700; color: var(--wf-neg); white-space: nowrap; transform: translateX(-50%); background: var(--page); padding: 0 3px; }
+  .gantt2-section { position: relative; margin-top: 3px; }
+  .gantt2-section-title { display: flex; align-items: center; gap: 8px; background: var(--page); font-weight: 700; font-size: 10px; padding: 4px 7px; border-top: 2px solid var(--text-primary); border-bottom: 2px solid var(--text-primary); position: relative; z-index: 2; }
+  .gantt2-section-title .ws-count { font-weight: 600; color: var(--text-muted); font-size: 9px; margin-left: auto; }
+  .gantt2-body { position: relative; }
+  .gantt2-lane-row { position: relative; height: 26px; border-bottom: 1px solid var(--grid); }
+  .gantt2-item { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+  .gantt2-bar { position: absolute; top: 3px; bottom: 3px; min-width: 24px; border-radius: 4px; background: var(--gantt-bar); display: flex; align-items: center; padding: 0 5px; font-size: 9px; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; z-index: 2; }
+  .gantt2-bar.st-done { background: var(--good-text); color: #fff; }
+  .gantt2-bar.st-in_progress { background: var(--pending-text); color: #fff; }
+  .gantt2-bar.critical { outline: 2px solid var(--wf-total); outline-offset: -2px; }
+  .dimmed { opacity: 0.28; }
+
+  tr.ws-group-hdr td { background: var(--page); font-weight: 700; padding: 5px 6px; }
+  tr.ws-group-hdr input.ws-title-input { font-weight: 700; }
+  button.btn-add-init, button.btn-del-init, #btn-add-ws { font-size: 10px; padding: 2px 7px; }
+  button.btn-del-init { color: var(--wf-neg); }
+  .ws-new-form { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
+  .ws-new-form input { font-family: inherit; font-size: 11px; padding: 4px 7px; border-radius: 6px; border: 1px solid var(--border); background: var(--page); color: var(--text-primary); min-width: 220px; }
+
+  table.reg { table-layout: fixed; width: 100%; }
+  table.reg th, table.reg td { border: 1px solid var(--grid); padding: 2px 4px; text-align: left; font-size: 10px; overflow: hidden; }
+  table.reg input.reg-input, table.reg input.reg-date, table.reg select.reg-select, table.reg .owner-input {
+    min-width: unset; font-size: 10px; padding: 3px 5px; width: 100%; box-sizing: border-box;
+  }
+  table.reg input[type="checkbox"].reg-check { width: 15px; height: 15px; cursor: pointer; }
+  table.reg th { background: var(--page); font-weight: 700; }
+  table.reg th:nth-child(1), table.reg td:nth-child(1) { width: 4%; }
+  table.reg th:nth-child(2), table.reg td:nth-child(2) { width: 47%; }
+  table.reg th:nth-child(3), table.reg td:nth-child(3) { width: 12%; }
+  table.reg th:nth-child(4), table.reg td:nth-child(4) { width: 9%; }
+  table.reg th:nth-child(5), table.reg td:nth-child(5) { width: 9%; }
+  table.reg th:nth-child(6), table.reg td:nth-child(6) { width: 8%; }
+  table.reg th:nth-child(7), table.reg td:nth-child(7) { width: 8%; }
+  table.reg th:nth-child(8), table.reg td:nth-child(8) { width: 3%; }
+  tr.reg-critical td:first-child { border-left: 4px solid var(--wf-total); }
+
+  .risk-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 7px; }
+  .risk { border: 1px solid var(--grid); border-left: 4px solid var(--wf-neg); padding: 6px 8px; font-size: 10px; line-height: 1.35; border-radius: 5px; }
+  .risk b { display: block; margin-bottom: 2px; }
+  .tag { color: var(--wf-neg); font-weight: 700; font-size: 9px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header class="topbar">
+    <div>
+      <h1>Бридж FCF — данные + дорожная карта трансформации</h1>
+      <div class="sub">Слева направо: ЮЛ → Локал → МСФО → Управленческая. Ниже — как считается FCF по каждой колонке (редактируется) и что нужно сделать, чтобы это заработало по всем строкам.</div>
+    </div>
+    <div class="topbar-controls">
+      <label for="ownerFilter">Ответственный:</label>
+      <select id="ownerFilter"></select>
+      <button id="theme-toggle" title="Светлая/тёмная тема">🌓</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <h2>Проблематика</h2>
+    <div class="card-sub">Черновик — поправь под себя, сохраняется автоматически</div>
+    <textarea id="problem-text" rows="4"></textarea>
+  </div>
+
+  <div class="card">
+    <div class="ring-row" id="ring-row"></div>
+  </div>
+
+  <div class="card">
+    <h2>Итоговый FCF</h2>
+    <div class="card-sub">Факт по столбцам — обновляется автоматически из значений ниже</div>
+    <div id="totals-wrap"></div>
+  </div>
+
+  <div class="card">
+    <h2>Из чего собирается FCF — по строкам и колонкам <span class="status-badge-mini" style="background:var(--accent-bg);color:var(--wf-total);">Косвенный метод</span></h2>
+    <div class="card-sub">Компактно, как в исходной табличке: статус по каждой ячейке, оранжевая метка — не готово со ссылкой на инициативу дорожной карты ниже.</div>
+    <div id="full-table-wrap"></div>
+    <div class="footnote">FCF считается от EBITDA (не от NOPAT) + CIT paid (cash) + прочие налоги + ΔCWC + CAPEX. Столбец НУ убран из этой таблицы. Цифры по Управленческой — демонстрационные, не факт из Hyperion.</div>
+  </div>
+
+  <div class="card">
+    <h2>Прямой метод <span class="status-badge-mini" style="background:var(--none-bg);color:var(--none-text);">по отчёту о платежах (ОП)</span></h2>
+    <div class="card-sub">Сверка с косвенным методом по факту денежных потоков между ЮЛ — раздел показывает, что уже собрано, а что нет.</div>
+    <div id="direct-table-wrap"></div>
+    <div class="footnote">ОП ЮЛ и ОП Управленка — сверяются с колонками «МСФО» и «Управленческая» косвенного метода выше. Прямой метод не начат по большей части строк — данные ниже частично демонстрационные.</div>
+  </div>
+
+  <div class="card">
+    <div class="legend">
+      <span><span class="sw-circle" style="background:var(--wf-pos)"></span>Готово</span>
+      <span><span class="sw-circle" style="background:var(--pending-text)"></span>В работе</span>
+      <span><span class="sw-circle" style="background:var(--surface-1); border:2px dashed var(--none-text);"></span>Не начато</span>
+      <span class="footnote" style="margin:0;">Статус — на уровне каждой ячейки. Ebitda/NOPAT/FCF считаются автоматически по компонентам.</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Дорожная карта трансформации <button id="btn-export" style="margin-left:10px;">Скачать файл с текущими данными</button></h2>
+    <div class="card-sub">масштаб шкалы — по датам инициатив автоматически · месяц + 4 равные визуальные доли (не привязаны к датам понедельник-воскресенье, только фон-разметка для глаза) · красная линия — сегодня · фильтр «Ответственный» вверху страницы гасит незакреплённые строки</div>
+    <div id="gantt-wrap" style="overflow-x:auto;"></div>
+    <div class="legend" style="margin-top:10px;">
+      <span><span class="sw-circle" style="background:var(--wf-total); border-radius:2px;"></span>критический путь</span>
+      <span><span class="sw-circle" style="background:var(--gantt-bar); border-radius:2px;"></span>инициатива</span>
+      <span style="color:var(--wf-neg); font-weight:600;">оранжевый текст в поле — владелец не назначен</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Реестр инициатив <button id="btn-save-init" style="margin-left:10px;">Сохранить</button><span id="save-confirm" class="footnote" style="display:none; color:var(--good-text); font-weight:700; margin-left:8px;">✓ Сохранено</span></h2>
+    <div class="card-sub">группировка — строго по разделу (workstream) инициативы, порядок внутри раздела — по номеру id инициативы (2.1, 2.2, ... — не меняется при правке дат) · «Сохранить» фиксирует изменения в общем облачном хранилище (Firebase) — видно всем, кто открывает эту ссылку, даже если ваш ноутбук выключен · «Скачать файл» в карточке Гантта выше — опциональная локальная резервная копия, не единственный способ сохранить данные</div>
+    <div id="reg-wrap"></div>
+  </div>
+
+  <div class="card">
+    <h2>Риски</h2>
+    <div class="risk-grid">
+      <div class="risk"><b>13 из 15 без владельца</b>включая весь критический путь (2.1→3.2→3.4→4.2→5.3) <span class="tag">[НУЖНО ОТ КЛИЕНТА]</span></div>
+      <div class="risk"><b>1 человек на 4 трека</b>последовательно вместо параллельно — 19 недель превращаются в 30+</div>
+      <div class="risk"><b>Manual Adj. без критериев</b>3.1 не определяет правило → 3.4 нельзя закрыть регламентом</div>
+      <div class="risk"><b>19 недель и порог ≤5%</b>не подтверждены заказчиком <span class="tag">[ГИПОТЕЗА]</span></div>
+      <div class="risk"><b>Календарь закрытия не учтён</b>план не привязан к месячному циклу, G4 попадает на каникулы <span class="tag">[НУЖНО ОТ КЛИЕНТА]</span></div>
+      <div class="risk"><b>Квазикосвенный метод с 2027</b>может прийти раньше готовности ручной аллокации CWC/CAPEX — переделка 3.x/4.x</div>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
+<script>
+/* ================= Firebase Realtime Database — облачное хранилище вместо localStorage =================
+   ВАЖНО: FIREBASE_CONFIG ниже — плейсхолдер. Вставить сюда реальный конфиг из Firebase Console
+   (Project settings → General → Your apps → </> Web → firebaseConfig) перед публикацией страницы.
+   Пока конфиг не заполнен, страница не откроется (initializeApp упадёт) — это ожидаемо на время настройки. */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAMTQclMWMJOrYqJAY3YJZvTciUuSxid6Q",
+  authDomain: "road-map-fcf.firebaseapp.com",
+  databaseURL: "https://road-map-fcf-default-rtdb.firebaseio.com",
+  projectId: "road-map-fcf",
+  storageBucket: "road-map-fcf.firebasestorage.app",
+  messagingSenderId: "243601110962",
+  appId: "1:243601110962:web:eb2806ffa7130f142596ab"
+};
+firebase.initializeApp(FIREBASE_CONFIG);
+const db = firebase.database();
+
+/* Стартовое состояние — пишется в Firebase только один раз, если /fcfBridge там ещё пусто
+   (первый запуск вообще никем). Дальше данные живут в базе, этот объект больше не используется. */
+/*__CLOUD_SEED_START__*/
+const CLOUD_SEED = null; // временно: будет заполнено реальным экспортом из v2.html
+/*__CLOUD_SEED_END__*/
+
+let CLOUD = {}; // плоский in-memory кэш всех значений из /fcfBridge, наполняется один раз при загрузке
+function cloudKey(k) { return k.replace(/[.#$\[\]]/g, '_'); } // Firebase запрещает . # $ [ ] в сегментах пути — встречается в id вида "2.1"
+function cloudGet(k) { const v = CLOUD[cloudKey(k)]; return v === undefined || v === null ? null : v; }
+function cloudSet(k, v) { const ck = cloudKey(k); CLOUD[ck] = v; db.ref('fcfBridge/' + ck).set(v); }
+
+async function bootCloud() {
+  try {
+    const snap = await db.ref('fcfBridge').once('value');
+    const val = snap.val();
+    if (val) {
+      CLOUD = val;
+    } else if (CLOUD_SEED) {
+      CLOUD = CLOUD_SEED;
+      await db.ref('fcfBridge').set(CLOUD_SEED);
+    }
+  } catch (e) {
+    document.getElementById('app').innerHTML =
+      '<div style="padding:40px;font-size:14px;color:#b00;">Не удалось подключиться к облачному хранилищу (Firebase). '
+      + 'Проверьте интернет-соединение и обновите страницу.<br><br>' + (e && e.message ? e.message : e) + '</div>';
+    throw e;
+  }
+}
+
+/* ================= P&L bridge data (перенесено из FCF_Bridge_Roadmap.html) ================= */
+/*__INDIRECT_START__*/
+let INDIRECT = [
+  { id: 'i1', name: 'Доходы', vals: [100, 110, 110, 115], status: 'done', kind: 'input' },
+  { id: 'i2', name: 'Доходы др. сервиса', vals: [null, 40, 40, null], status: 'done', kind: 'input' },
+  { id: 'i3', name: 'Расходы НУ1', vals: [-50, -45, -45, -50], status: 'done', kind: 'input' },
+  { id: 'i4', name: 'Расходы НУ2', vals: [null, -20, -20, -22], status: 'done', kind: 'input' },
+  { id: 'i5', name: 'Расходы других ЮЛ', vals: [null, null, -50, -20], status: 'done', kind: 'input' },
+  { id: 'i6', name: 'Расходы других сервисов', vals: [null, -30, 0, -25], status: 'done', kind: 'input' },
+  { id: 'i7', name: 'Ebitda', vals: [50, 55, 35, -2], status: 'done', kind: 'computed' },
+  { id: 'i8', name: 'CIT', vals: [-2, -2, -3, -2], status: 'done', kind: 'input' },
+  { id: 'i9', name: 'NOPAT', vals: [48, 53, 32, -4], status: 'done', kind: 'computed' },
+  { id: 'i10', name: 'CIT paid', vals: [-1, -1, -1, -2], status: 'in_progress', kind: 'input' },
+  { id: 'i11', name: 'Прочие налоги (VAT, ССВ)', vals: [-30, -30, -30, -32], status: 'in_progress', kind: 'input' },
+  { id: 'i12', name: 'CWC', vals: [40, 30, 30, 28], status: 'in_progress', kind: 'input' },
+  { id: 'i13', name: 'CAPEX', vals: [-5, -5, -5, -5], status: 'in_progress', kind: 'input' },
+  { id: 'i14', name: 'FCF', vals: [54, 49, 29, -13], status: 'in_progress', kind: 'computed' },
+];
+/*__INDIRECT_END__*/
+const EBITDA_COMPONENTS = ['i1', 'i2', 'i3', 'i4', 'i5', 'i6'];
+const NOPAT_COMPONENTS = ['i7', 'i8'];
+const FCF_COMPONENTS = ['i7', 'i10', 'i11', 'i12', 'i13']; // фикс: было от i9 (NOPAT) — задваивало CIT
+
+// какая инициатива дорожной карты закроет строку, если она не готова
+const ROW_INITIATIVE = { i2: '2.1', i4: '2.1', i5: '2.1', i6: '2.1', i7: '2.1', i9: '2.1', i10: '2.3', i11: '2.4', i12: '3.4', i13: '4.2', i14: '5.3' };
+
+const COLS = [
+  { level: 'ЮЛ', basis: 'НУ' },
+  { level: 'ЮЛ', basis: 'БУ (Локал)' },
+  { level: 'ЮЛ', basis: 'МСФО' },
+  { level: 'Сервиса', basis: 'Управленческая (Нуре)' },
+];
+
+// прямой метод — те же 4 колонки, что и косвенный; НУ/Локал прямым методом не считаются,
+// заполняются только МСФО (≈ ОП ЮЛ) и Управленческая (≈ ОП Управленка)
+/*__DIRECT_START__*/
+let DIRECT = [
+  { id: 'd1', name: 'ЮЛ за сервис ЮЛ', vals: [null, null, 30, 30], status: 'in_progress', kind: 'input' },
+  { id: 'd2', name: 'ЮЛ за другие сервисы', vals: [null, null, 19, null], status: 'in_progress', kind: 'input' },
+  { id: 'd3', name: 'Другие ЮЛ за сервис', vals: [null, null, null, -42], status: 'in_progress', kind: 'input' },
+  { id: 'd4', name: 'FCF (прямой метод)', vals: [null, null, 49, -12], status: 'in_progress', kind: 'computed' },
+];
+/*__DIRECT_END__*/
+const DIRECT_COMPONENTS = ['d1', 'd2', 'd3'];
+
+const STATUS_WEIGHT = { done: 1, in_progress: 0.5, todo: 0 };
+const NEXT_STATUS = { todo: 'in_progress', in_progress: 'done', done: 'todo' };
+
+const OWNER_KEY_PREFIX = 'fcfBridgeRoadmap_owner_';
+const VAL_KEY_PREFIX = 'fcfBridgeRoadmap_val_';
+const STATUS_KEY_PREFIX = 'fcfBridgeRoadmap_status_';
+const PROBLEM_KEY = 'fcfBridgeRoadmap_problem';
+
+/*__PL_OWNER_DEFAULTS_START__*/
+let PL_OWNER_DEFAULTS = {
+  "i1": "Вика+Инна",
+  "i2": "Вика+Инна",
+  "i3": "Вика+Инна",
+  "i4": "Вика+Инна",
+  "i5": "Вика+Инна",
+  "i6": "Вика+Инна",
+  "i7": "Вика+Инна",
+  "i8": "Вика+Инна",
+  "i9": "Вика+Инна",
+  "i10": "Вика+Инна",
+  "i11": "Маша+Оля / Вика+Инна",
+  "i12": "Расчетная величина+ Анализ балансов",
+  "i13": "ОП",
+  "i14": "Маша+Оля / Вика+Инна",
+  "d1": "Маша",
+  "d2": "Маша",
+  "d4": "ОП"
+};
+/*__PL_OWNER_DEFAULTS_END__*/
+
+/*__PROBLEM_DEFAULT_START__*/
+const DEFAULT_PROBLEM = "Источник: наша методология (wiki → Cash flow: FCF) и Cash Flow по сегментам (wiki → Центр).\n\nEBITDA считается по сервису и в плане, и в факте — здесь разрыва нет. А вот Income Tax, CAPEX и 4 из 5 компонентов Δ CWC (AR, AP, Agent AR/AP, Exclusives) в факте определяются только на уровне юрлица: на балансовых счетах в OEBS нет аналитики сервиса, поэтому их нужно аллоцировать с ЮЛ на сервис вручную. Это главный методологический разрыв между планом (почти всё уже на уровне сервиса) и фактом.\n\nПо самим данным ниже: даже базовые строки (доходы/расходы/CIT) сведены по ЮЛ/Локал/МСФО не полностью и не одинаково — некоторые реклассификации закрыты только в одной колонке. CIT paid, прочие налоги, CWC и CAPEX — не собраны ни по одной колонке в реальности; цифры по Управленческой (Hyperion) на этом дашборде — демонстрационные, для показа целевого вида бриджа, а не факт. Прямой метод для финальной сверки не начат.\n\nС 2027 года центр переходит на квазикосвенный метод: FCF берётся напрямую из отчёта о платежах, а Δ CWC (CWC_implied) — балансирующая величина без ручной аллокации по компонентам. Это снимает проблему аллокации, но раскрытие структуры CWC по компонентам (Exclusives/AR/AP/Agent) исчезает.";
+/*__PROBLEM_DEFAULT_END__*/
+
+function byId(list, id) { return list.find(r => r.id === id); }
+function findRow(rowId) { return byId(INDIRECT, rowId) || byId(DIRECT, rowId); }
+function sumVals(list, ids, col) { return ids.reduce((acc, id) => acc + (byId(list, id).vals[col] || 0), 0); }
+function aggregateStatus(list) {
+  if (list.every(s => s === 'done')) return 'done';
+  if (list.every(s => s === 'todo')) return 'todo';
+  return 'in_progress';
+}
+function recomputeIndirect() {
+  const ebitda = byId(INDIRECT, 'i7');
+  const nopat = byId(INDIRECT, 'i9');
+  const fcf = byId(INDIRECT, 'i14');
+  for (let col = 0; col < COLS.length; col++) {
+    ebitda.vals[col] = sumVals(INDIRECT, EBITDA_COMPONENTS, col);
+    nopat.vals[col] = sumVals(INDIRECT, NOPAT_COMPONENTS, col);
+    fcf.vals[col] = sumVals(INDIRECT, FCF_COMPONENTS, col);
+  }
+  ebitda.status = aggregateStatus(EBITDA_COMPONENTS.map(id => byId(INDIRECT, id).status));
+  nopat.status = aggregateStatus(NOPAT_COMPONENTS.map(id => byId(INDIRECT, id).status));
+  fcf.status = aggregateStatus(FCF_COMPONENTS.map(id => byId(INDIRECT, id).status));
+}
+function recomputeDirect() {
+  const fcf = byId(DIRECT, 'd4');
+  for (let col = 0; col < COLS.length; col++) {
+    const hasAny = DIRECT_COMPONENTS.some(id => {
+      const v = byId(DIRECT, id).vals[col];
+      return v !== null && v !== undefined;
+    });
+    fcf.vals[col] = hasAny ? sumVals(DIRECT, DIRECT_COMPONENTS, col) : null;
+  }
+  fcf.status = aggregateStatus(DIRECT_COMPONENTS.map(id => byId(DIRECT, id).status));
+}
+function loadSaved(list) {
+  list.forEach(row => {
+    row.vals.forEach((v, col) => {
+      if (row.kind === 'computed') return;
+      const raw = cloudGet(VAL_KEY_PREFIX + row.id + '_' + col);
+      if (raw !== null) row.vals[col] = raw === '' ? null : parseFloat(raw);
+    });
+    if (row.kind === 'input') {
+      const savedStatus = cloudGet(STATUS_KEY_PREFIX + row.id);
+      if (savedStatus) row.status = savedStatus;
+    }
+  });
+}
+function fmt(v) { return v === null || v === undefined || Number.isNaN(v) ? '' : v; }
+function fmtDash(v) { return v === null || v === undefined || Number.isNaN(v) ? '—' : v; }
+function progressOfStatuses(list) {
+  const total = list.length;
+  const done = list.filter(s => s === 'done').length;
+  const inProgress = list.filter(s => s === 'in_progress').length;
+  const todo = list.filter(s => s === 'todo').length;
+  const weighted = list.reduce((acc, s) => acc + (STATUS_WEIGHT[s] || 0), 0);
+  const pct = total ? Math.round((weighted / total) * 100) : 0;
+  return { total, done, inProgress, todo, pct };
+}
+function initProblem() {
+  const el = document.getElementById('problem-text');
+  el.value = cloudGet(PROBLEM_KEY) || DEFAULT_PROBLEM;
+  el.addEventListener('input', () => cloudSet(PROBLEM_KEY, el.value));
+}
+
+function renderRings() {
+  const all = progressOfStatuses(INDIRECT.concat(DIRECT).map(r => r.status));
+  const indirect = progressOfStatuses(INDIRECT.map(r => r.status));
+  const direct = progressOfStatuses(DIRECT.map(r => r.status));
+  const ringColor = p => p.pct >= 100 ? 'var(--wf-pos)' : p.pct <= 0 ? 'var(--none-text)' : 'var(--pending-text)';
+  const tile = (title, p) => `
+    <div class="ring-tile">
+      <div class="ring" style="--pct:${p.pct}; --ring-color:${ringColor(p)}">
+        <div class="ring-inner">${p.pct}%</div>
+      </div>
+      <div class="ring-label">
+        <div class="title">${title}</div>
+        <div class="breakdown"><b>${p.done}</b> готово · <b>${p.inProgress}</b> в работе · <b>${p.todo}</b> to be done</div>
+      </div>
+    </div>`;
+  document.getElementById('ring-row').innerHTML =
+    tile('Общий прогресс', all) + tile('Косвенный метод', indirect) + tile('Прямой метод', direct);
+}
+
+function renderTotals() {
+  const fcf = byId(INDIRECT, 'i14');
+  document.getElementById('totals-wrap').innerHTML = `
+    <table class="totals">
+      <thead>
+        <tr><th rowspan="2">FCF</th>${COLS.map(c => `<th>${c.level}</th>`).join('')}</tr>
+        <tr>${COLS.map(c => `<th>${c.basis}</th>`).join('')}</tr>
+      </thead>
+      <tbody><tr class="hl"><td>Косвенный метод</td>${fcf.vals.map(v => `<td>${fmtDash(v)}</td>`).join('')}</tr></tbody>
+    </table>`;
+}
+
+/* ---------- always-visible full build table ---------- */
+function valCell(row, col) {
+  const value = row.kind === 'computed'
+    ? `<span class="computed" data-total-row="${row.id}" data-col="${col}">${fmtDash(row.vals[col])}</span>`
+    : `<input class="val-input" type="number" step="any" value="${fmt(row.vals[col])}" data-row-id="${row.id}" data-col="${col}">`;
+  return `<td class="num">${value}</td>`;
+}
+function statusSummaryCell(row) {
+  const m = STATUS_META[row.status];
+  const clickable = row.kind === 'input';
+  const badge = `<span class="status-badge-mini${clickable ? ' clickable' : ''}" style="background:${m.bg};color:${m.fg}"
+    title="${clickable ? 'Клик — сменить статус' : m.label}" ${clickable ? `data-dot-row="${row.id}"` : ''}>${m.label}</span>`;
+  const initId = row.status !== 'done' ? ROW_INITIATIVE[row.id] : null;
+  if (!initId) return `<td>${badge}</td>`;
+  const isEbitda = row.id === 'i7';
+  const label = isEbitda ? `⚙ в процессе автоматизации` : initId;
+  const title = isEbitda
+    ? 'Аллокация EBITDA по сервису уже в процессе автоматизации — см. инициативу 2.1 на дорожной карте ниже'
+    : `Не готово — закроет инициатива ${initId}, см. дорожную карту ниже`;
+  return `<td>${badge}<a href="#init-${initId}" class="init-pill${isEbitda ? ' auto' : ''}" title="${title}" data-goto-init="${initId}">${label}</a></td>`;
+}
+function bindInitPills() {
+  document.querySelectorAll('[data-goto-init]').forEach(a => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      const row = document.getElementById('init-' + a.dataset.gotoInit);
+      if (!row) return;
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      row.classList.remove('gantt-flash'); void row.offsetWidth; row.classList.add('gantt-flash');
+    });
+  });
+}
+function loadPlOwner(rowId) {
+  const v = cloudGet(OWNER_KEY_PREFIX + rowId);
+  return v !== null ? v : (PL_OWNER_DEFAULTS[rowId] || '');
+}
+function ownerCell(rowId) {
+  const saved = loadPlOwner(rowId);
+  return `<td class="owner-cell">
+    <input class="owner-input" type="text" placeholder="Укажите ответственного" value="${saved.replace(/"/g,'&quot;')}" data-row-id="${rowId}">
+    <span class="saved-hint" data-hint-for="${rowId}">сохранено</span>
+  </td>`;
+}
+function fullRow(row, extraClass) {
+  return `<tr class="${row.kind === 'computed' ? 'computed-row' : ''} ${extraClass || ''}" data-owner-row="${row.id}" data-owner-store="${OWNER_KEY_PREFIX}">
+    <td>${row.name}</td>
+    ${row.vals.map((_, col) => valCell(row, col)).join('')}
+    ${statusSummaryCell(row)}
+    ${ownerCell(row.id)}
+  </tr>`;
+}
+function renderFullTable() {
+  const rows = INDIRECT;
+  const html = `
+    <table>
+      <thead>
+        <tr><th rowspan="2">Статья</th>${COLS.map(c => `<th class="num">${c.level}</th>`).join('')}<th rowspan="2">Статус</th><th rowspan="2" style="min-width:160px;">Ответственный</th></tr>
+        <tr>${COLS.map(c => `<th class="num">${c.basis}</th>`).join('')}</tr>
+      </thead>
+      <tbody>
+        <tr class="group-hdr"><td colspan="7">Доходы / Расходы <span class="bridge-tag">→ строятся в EBITDA ниже</span></td></tr>
+        ${['i1','i2','i3','i4','i5','i6'].map(id => fullRow(byId(rows, id))).join('')}
+        ${fullRow(byId(rows, 'i7'), 'row-ebitda')}
+        <tr class="group-hdr"><td colspan="7">CIT → NOPAT (справочно, в кэш-FCF не участвует)</td></tr>
+        ${fullRow(byId(rows, 'i8'))}
+        ${fullRow(byId(rows, 'i9'), 'row-nopat')}
+        <tr class="group-hdr"><td colspan="7">Cash-налоги / CWC / CAPEX <span class="bridge-tag">→ вместе с EBITDA дают FCF</span></td></tr>
+        ${['i10','i11','i12','i13'].map(id => fullRow(byId(rows, id))).join('')}
+        ${fullRow(byId(rows, 'i14'), 'row-fcf')}
+      </tbody>
+    </table>`;
+  document.getElementById('full-table-wrap').innerHTML = html;
+}
+function renderDirectTable() {
+  const html = `
+    <table>
+      <thead>
+        <tr><th rowspan="2">Статья (отчёт о платежах)</th>${COLS.map(c => `<th class="num">${c.level}</th>`).join('')}<th rowspan="2">Статус</th><th rowspan="2" style="min-width:160px;">Ответственный</th></tr>
+        <tr>${COLS.map(c => `<th class="num">${c.basis}</th>`).join('')}</tr>
+      </thead>
+      <tbody>
+        ${DIRECT_COMPONENTS.map(id => fullRow(byId(DIRECT, id))).join('')}
+        ${fullRow(byId(DIRECT, 'd4'), 'row-fcf')}
+      </tbody>
+    </table>`;
+  document.getElementById('direct-table-wrap').innerHTML = html;
+}
+
+/* ---------- interactive bindings (shared across full table) ---------- */
+function bindValInputs() {
+  document.querySelectorAll('input.val-input').forEach(input => {
+    input.addEventListener('input', () => {
+      const rowId = input.dataset.rowId;
+      const col = parseInt(input.dataset.col, 10);
+      const row = findRow(rowId);
+      const num = input.value === '' ? null : parseFloat(input.value);
+      row.vals[col] = num;
+      cloudSet(VAL_KEY_PREFIX + rowId + '_' + col, input.value === '' ? '' : String(num));
+      const isIndirect = INDIRECT.includes(row);
+      if (isIndirect) { recomputeIndirect(); renderTotals(); renderFullTable(); }
+      else { recomputeDirect(); renderDirectTable(); }
+      renderRings();
+      bindValInputs(); bindStatusDots(); bindOwnerInputs(); bindInitPills(); applyOwnerFilter();
+    });
+  });
+}
+function bindStatusDots() {
+  document.querySelectorAll('.status-badge-mini.clickable').forEach(dot => {
+    dot.addEventListener('click', () => {
+      const rowId = dot.dataset.dotRow;
+      const row = findRow(rowId);
+      row.status = NEXT_STATUS[row.status];
+      cloudSet(STATUS_KEY_PREFIX + rowId, row.status);
+      const isIndirect = INDIRECT.includes(row);
+      if (isIndirect) recomputeIndirect(); else recomputeDirect();
+      renderRings();
+      if (isIndirect) renderFullTable(); else renderDirectTable();
+      bindStatusDots(); bindInitPills();
+    });
+  });
+}
+function bindOwnerInputs() {
+  document.querySelectorAll('input.owner-input[data-row-id]').forEach(input => {
+    input.addEventListener('input', () => {
+      const rowId = input.dataset.rowId;
+      cloudSet(OWNER_KEY_PREFIX + rowId, input.value);
+      const hint = document.querySelector(`.saved-hint[data-hint-for="${rowId}"]`);
+      if (hint) { hint.classList.add('show'); clearTimeout(hint._t); hint._t = setTimeout(() => hint.classList.remove('show'), 900); }
+      rebuildOwnerFilterOptions(); applyOwnerFilter();
+    });
+  });
+}
+
+/* ================= Transformation roadmap (Gantt + register) — v2: date-% positioning, lanes, CRUD ================= */
+const ROADMAP_STORE_KEY_INIT = 'fcfBridgeRoadmap_v2_initiatives';
+const ROADMAP_STORE_KEY_WS = 'fcfBridgeRoadmap_v2_workstreams';
+const INIT_OWNER_PREFIX = 'fcfTransformOwner_';
+const INIT_OWNER_DEFAULTS_KEY = 'fcfBridgeRoadmap_v2_ownerDefaults';
+
+/*__INITIATIVES_START__*/
+let INITIATIVES = [
+  { id: '1.1', workstream: 'p_l', title: 'Бридж между учетами НУ-Локал', start: '2026-08-01', end: '2026-08-31', critical: false, dependsOn: [], status: 'in_progress' },
+  { id: '2.1', workstream: 'alloc', title: 'Сборка из отчета о платежах суммы оплаченного налога прибыль по ЮЛ (с учетом корректировок)', start: '2026-09-01', end: '2026-09-30', critical: false, dependsOn: [], status: 'done' },
+  { id: '2.2', workstream: 'alloc', title: 'Разделение налогового учета на сервисы', start: '2026-09-01', end: '2026-09-30', critical: false, dependsOn: [], status: 'todo' },
+  { id: '2.3', workstream: 'alloc', title: 'Соотношение налога уплаченного к сервису', start: '2026-09-01', end: '2026-09-30', critical: false, dependsOn: [], status: 'todo' },
+  { id: '2.4', workstream: 'alloc', title: 'Автоматизация обновления данных в бридже', start: '2026-10-01', end: '2026-10-15', critical: true, dependsOn: [], status: 'todo' },
+  { id: '4.1', workstream: 'cwc', title: 'Сборка из отчета о платежах суммы оплаченных кап расходов', start: '2026-09-01', end: '2026-09-30', critical: false, dependsOn: [], status: 'todo' },
+  { id: '4.2', workstream: 'cwc', title: 'Разделение локального учета на сервисы', start: '2026-09-01', end: '2026-09-30', critical: false, dependsOn: ['2.1'], status: 'todo' },
+  { id: '4.3', workstream: 'cwc', title: 'Соотношение оплаченного Capex на Сервисы', start: '2026-09-01', end: '2026-09-30', critical: false, dependsOn: ['2.1'], status: 'todo' },
+  { id: '4.4', workstream: 'cwc', title: 'Автоматизация обновления данных в бридже', start: '2026-10-01', end: '2026-10-15', critical: false, dependsOn: ['4.1', '4.2', '4.3'], status: 'todo' },
+  { id: '5.1', workstream: 'capex', title: 'Сбор балансов из ППБ по юр лицу', start: '2026-08-01', end: '2026-08-30', critical: false, dependsOn: [], status: 'done' },
+  { id: '5.2', workstream: 'capex', title: 'Аллокация строк WC по сервису по договорам', start: '2026-09-01', end: '2026-10-30', critical: false, dependsOn: ['5.1', '2.1'], status: 'todo' },
+  { id: '6.1', workstream: 'close', title: 'Прямой метод — сбор данных', start: '2026-10-13', end: '2026-11-16', critical: false, dependsOn: ['1.1'], status: 'todo' },
+  { id: '6.2', workstream: 'close', title: 'Косвенный метод- сбор данных', start: '2026-11-03', end: '2026-11-23', critical: false, dependsOn: ['2.3', '2.4', '4.4', '5.2'], status: 'todo' },
+  { id: '6.3', workstream: 'close', title: 'Сверка двух методов', start: '2026-11-17', end: '2026-12-07', critical: false, dependsOn: ['6.2', '6.1'], status: 'todo' },
+  { id: '6.4', workstream: 'close', title: 'Сбор корректировок на прямой метод', start: '2026-12-01', end: '2026-12-21', critical: false, dependsOn: ['6.3'], status: 'todo' },
+  { id: '1.2', workstream: 'p_l', title: 'Бридж между учетами Локал-МСФО', start: '2026-08-01', end: '2026-08-31', critical: false, dependsOn: [], status: 'in_progress' },
+  { id: '3.1', workstream: '3_other_taxes_paid', title: 'Сборка из отчета о платежах суммы оплаченных налогов', start: '2026-10-01', end: '2026-10-31', critical: false, dependsOn: [], status: 'todo' },
+  { id: '5.3', workstream: 'capex', title: 'Соотношение изменения WC по сервисам', start: '2026-09-01', end: '2026-10-30', critical: false, dependsOn: [], status: 'todo' },
+  { id: '5.4', workstream: 'capex', title: 'Анализ влияния аллокаций в Нуpe на СWC (аллокации HQ, такси)', start: '2026-09-01', end: '2026-10-30', critical: false, dependsOn: [], status: 'todo' },
+  { id: '5.5', workstream: 'capex', title: 'Автоматизация обновления данных в бридже', start: '2026-10-01', end: '2026-10-30', critical: false, dependsOn: [], status: 'todo' },
+  { id: '3.2', workstream: '3_other_taxes_paid', title: 'Разделение налогового учета на сервисы', start: '2026-10-01', end: '2026-10-31', critical: false, dependsOn: [], status: 'todo' },
+  { id: '3.3', workstream: '3_other_taxes_paid', title: 'Соотношение налога уплаченного к сервисувая инициатива', start: '2026-10-01', end: '2026-10-31', critical: false, dependsOn: [], status: 'todo' },
+  { id: '3.4', workstream: '3_other_taxes_paid', title: 'Автоматизация обновления данных в бридже', start: '2026-10-01', end: '2026-10-15', critical: false, dependsOn: [], status: 'todo' },
+  { id: '1.3', workstream: 'p_l', title: 'Бридж между учетами  МСФО- Управленческая', start: '2026-08-01', end: '2026-08-31', critical: false, dependsOn: [], status: 'todo' },
+  { id: '1.4', workstream: 'p_l', title: 'Автоматизация сборки и отражение в даше', start: '2026-09-01', end: '2026-10-30', critical: false, dependsOn: [], status: 'todo' },
+  { id: '5.6', workstream: '6', title: 'Сборка в один даш всех пунктов выше', start: '2026-11-01', end: '2026-11-15', critical: false, dependsOn: [], status: 'todo' },
+];
+/*__INITIATIVES_END__*/
+
+/*__WORKSTREAMS_START__*/
+let WORKSTREAMS = [
+  { key: 'p_l', title: '1. EBITDA Бридж', order: 1 },
+  { key: 'alloc', title: '2. СIT paid', order: 2 },
+  { key: 'cwc', title: '4. CAPEX', order: 4 },
+  { key: 'capex', title: '5. CWC', order: 5 },
+  { key: 'close', title: '6. Сверка прямого и косвенного CF', order: 5 },
+  { key: '6', title: '7. FCF Бридж', order: 5 },
+  { key: '3_other_taxes_paid', title: '3. Other taxes paid (Сущ налоги)', order: 3 },
+];
+/*__WORKSTREAMS_END__*/
+
+/*__OWNER_DEFAULTS_START__*/
+let INIT_OWNER_DEFAULTS = {
+  "1.1": "Инна+Вика+Юля",
+  "2.1": "Маша+ Оля",
+  "2.2": "Инна+Вика",
+  "2.3": "Инна+Вика (еда) Маша+ Оля (пр сервисы)",
+  "2.4": "Маша+ Оля+Рашид",
+  "4.1": "Маша+Оля ",
+  "4.2": "Инна+Вика",
+  "4.3": "Инна+Вика (еда) Маша+ Оля (пр сервисы)",
+  "4.4": "Маша+ Оля +Рашид",
+  "5.1": "Маша+Оля ",
+  "5.2": "Инна+Маша",
+  "6.1": "Маша+Оля ",
+  "6.2": "Маша+Оля ",
+  "6.3": "Маша+Инна+Оля",
+  "6.4": "Инна+Вика (еда) Маша+ Оля (пр сервисы)",
+  "1.2": "Инна+Вика+Юля",
+  "3.1": "Маша+Оля ",
+  "5.3": "Инна+Маша",
+  "5.4": "Инна+Маша",
+  "5.5": "Инна+Маша",
+  "3.2": "Инна+Вика",
+  "3.3": "Инна+Вика (еда) Маша+ Оля (пр сервисы)",
+  "3.4": "Маша+ Оля +Рашид",
+  "1.3": "Инна+Вика+Юля",
+  "1.4": "Маша+ Оля+Рашид",
+  "5.6": "Маша+ Оля +Рашид"
+};
+/*__OWNER_DEFAULTS_END__*/
+
+const STATUS_META = {
+  done:        { label:'Готово',      bg:'var(--good-bg)',    fg:'var(--good-text)' },
+  in_progress: { label:'В процессе',  bg:'var(--pending-bg)', fg:'var(--pending-text)' },
+  todo:        { label:'Не начато',   bg:'var(--none-bg)',    fg:'var(--none-text)' },
+};
+
+function loadInitiativesData() {
+  try { const s = cloudGet(ROADMAP_STORE_KEY_INIT); if (s) INITIATIVES = JSON.parse(s); } catch (e) {}
+  try { const s = cloudGet(ROADMAP_STORE_KEY_WS); if (s) WORKSTREAMS = JSON.parse(s); } catch (e) {}
+  try { const s = cloudGet(INIT_OWNER_DEFAULTS_KEY); if (s) INIT_OWNER_DEFAULTS = JSON.parse(s); } catch (e) {}
+}
+function saveInitiativesData() {
+  cloudSet(ROADMAP_STORE_KEY_INIT, JSON.stringify(INITIATIVES));
+  cloudSet(ROADMAP_STORE_KEY_WS, JSON.stringify(WORKSTREAMS));
+}
+function loadInitOwner(id) { const v = cloudGet(INIT_OWNER_PREFIX + id); return v !== null ? v : (INIT_OWNER_DEFAULTS[id] || ''); }
+function saveInitOwner(id, val) { cloudSet(INIT_OWNER_PREFIX + id, val); }
+
+/* ---- date helpers: UTC-shift-safe parse (split + local Date constructor, no timezone involved) ---- */
+function parseDate(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+function isoOf(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+function addDays(date, days) { const d = new Date(date); d.setDate(d.getDate() + days); return d; }
+function todayDate() { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); }
+
+/* ---- dynamic scale: min/max computed from all initiative + gate dates, + edge buffer ---- */
+function computeDateRange() {
+  const dates = [];
+  INITIATIVES.forEach(it => { dates.push(parseDate(it.start)); dates.push(parseDate(it.end)); });
+  dates.push(todayDate());
+  const minDate = addDays(new Date(Math.min(...dates)), -5);
+  const maxDate = addDays(new Date(Math.max(...dates)), 5);
+  return { minDate, maxDate };
+}
+function pctOf(date, minDate, maxDate) { return (date - minDate) / (maxDate - minDate) * 100; }
+
+// Orders initiatives by their id's numeric segments (2.1 < 2.2 < 2.10 < 2.11), not by start date —
+// used for the register/list display so rows don't reshuffle just because a date is edited.
+// Non-numeric segments fall back to plain string comparison.
+function compareInitIds(a, b) {
+  const pa = a.id.split('.'), pb = b.id.split('.');
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const na = Number(pa[i]), nb = Number(pb[i]);
+    if (!isNaN(na) && !isNaN(nb)) { if (na !== nb) return na - nb; }
+    else { const sa = pa[i] || '', sb = pb[i] || ''; if (sa !== sb) return sa.localeCompare(sb); }
+  }
+  return 0;
+}
+
+/* ---- lane assignment: greedy interval scheduling — recomputed on every render, never cached ----
+   Sort by start date, then place each item in the first lane whose last-placed end date
+   is before this item's start (no overlap); otherwise open a new lane. Two initiatives with
+   overlapping dates in the same workstream can never land in the same lane by construction. */
+function assignLanes(items) {
+  const sorted = [...items].sort((a, b) => parseDate(a.start) - parseDate(b.start) || compareInitIds(a, b));
+  const laneEnds = [];
+  const withLanes = sorted.map(it => {
+    const s = parseDate(it.start), e = parseDate(it.end);
+    let lane = laneEnds.findIndex(end => end < s);
+    if (lane === -1) { lane = laneEnds.length; laneEnds.push(e); } else { laneEnds[lane] = e; }
+    return { ...it, lane };
+  });
+  return { items: withLanes, laneCount: laneEnds.length };
+}
+
+function groupByWorkstream() {
+  return [...WORKSTREAMS].sort((a, b) => a.order - b.order).map(ws => {
+    const items = INITIATIVES.filter(it => it.workstream === ws.key);
+    const { items: withLanes, laneCount } = assignLanes(items);
+    return { ws, items: withLanes, laneCount: Math.max(laneCount, 1) };
+  });
+}
+
+function measureTextWidth(text, font) {
+  if (!window.__ganttMeasureCtx) window.__ganttMeasureCtx = document.createElement('canvas').getContext('2d');
+  window.__ganttMeasureCtx.font = font;
+  return window.__ganttMeasureCtx.measureText(text).width;
+}
+// Fits "id title" into maxPx by shrinking the title (never the id) one char at a time, appending "…".
+// Returns '' if even the bare id doesn't fit — caller then shows nothing rather than an overlapping label.
+function fitLabelToWidth(id, title, maxPx, font) {
+  if (maxPx <= 0) return '';
+  const full = `${id} ${title}`;
+  if (measureTextWidth(full, font) <= maxPx) return full;
+  let t = title;
+  while (t.length > 0) {
+    const candidate = `${id} ${t}…`;
+    if (measureTextWidth(candidate, font) <= maxPx) return candidate;
+    t = t.slice(0, -1);
+  }
+  return measureTextWidth(id, font) <= maxPx ? id : '';
+}
+
+function renderGantt() {
+  const { minDate, maxDate } = computeDateRange();
+  const groups = groupByWorkstream();
+  const containerWidthPx = document.getElementById('gantt-wrap').clientWidth || 1000;
+  const BAR_FONT = '700 9px Inter, Arial, sans-serif';
+
+  let sectionsHtml = '';
+  groups.forEach(({ ws, items, laneCount }) => {
+    const assignedCount = items.filter(it => loadInitOwner(it.id).trim() !== '').length;
+    let rowsHtml = '';
+    for (let lane = 0; lane < laneCount; lane++) {
+      const laneItems = items.filter(it => it.lane === lane);
+      rowsHtml += `<div class="gantt2-lane-row">${laneItems.map((it) => {
+        const left = pctOf(parseDate(it.start), minDate, maxDate);
+        const width = Math.max(pctOf(parseDate(it.end), minDate, maxDate) - left, 0.6);
+        const owner = loadInitOwner(it.id);
+        const tt = `${it.id} ${it.title} | ${it.start} → ${it.end} | ${STATUS_META[it.status].label}${owner ? ' | Ответственный: ' + owner : ''}`.replace(/"/g, '&quot;');
+        // Label is always rendered INSIDE the bar (never below it): id + title, truncated with an
+        // ellipsis to whatever actually fits the bar's own pixel width (measured via canvas, not
+        // estimated), falling back to the bare id if even "id + …" doesn't fit. CSS min-width on the
+        // bar guarantees there's always at least enough room for the id.
+        const barWidthPx = Math.max(width / 100 * containerWidthPx, 24);
+        const barInner = fitLabelToWidth(it.id, it.title, barWidthPx - 10, BAR_FONT) || it.id;
+        return `<div class="gantt2-item" id="init-${it.id}" data-owner-row="${it.id}" data-owner-store="${INIT_OWNER_PREFIX}">
+          <div class="gantt2-bar st-${it.status}${it.critical ? ' critical' : ''}" style="left:${left}%;width:${width}%" title="${tt}">${barInner}</div>
+        </div>`;
+      }).join('')}</div>`;
+    }
+    sectionsHtml += `<div class="gantt2-section">
+      <div class="gantt2-section-title">${ws.title}<span class="ws-count">${assignedCount}/${items.length} назначено</span></div>
+      <div class="gantt2-body">${rowsHtml}</div>
+    </div>`;
+  });
+
+  // Timeline scale: month name is the only labeled tick; 3 unlabeled dividers inside each month
+  // split it into 4 equal visual quarters (pure readability aid — NOT real Mon-Sun weeks).
+  // Bar positions never use these dividers — they're always computed from exact start/end dates via pctOf().
+  const MONTHS_RU = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
+  let ticksHtml = '';
+  let monthCursor = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+  let lastYearShown = null;
+  while (monthCursor <= maxDate) {
+    const monthStart = monthCursor;
+    const monthEnd = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 1);
+    const monthSpanMs = monthEnd.getTime() - monthStart.getTime();
+    for (let k = 1; k <= 3; k++) {
+      const segPct = pctOf(new Date(monthStart.getTime() + monthSpanMs * (k / 4)), minDate, maxDate);
+      if (segPct >= 0 && segPct <= 100) ticksHtml += `<div class="gantt2-tick" style="left:${segPct}%"></div>`;
+    }
+    const pct = Math.max(pctOf(monthStart, minDate, maxDate), 0);
+    const showYear = monthStart.getFullYear() !== lastYearShown;
+    lastYearShown = monthStart.getFullYear();
+    ticksHtml += `<div class="gantt2-month-tick" style="left:${pct}%"></div><div class="gantt2-month-label" style="left:calc(${pct}% + 3px)">${MONTHS_RU[monthStart.getMonth()]}${showYear ? ' ' + monthStart.getFullYear() : ''}</div>`;
+    monthCursor = monthEnd;
+  }
+
+  const todayPct = pctOf(todayDate(), minDate, maxDate);
+  const todayHtml = (todayPct >= 0 && todayPct <= 100)
+    ? `<div class="gantt2-today" style="left:${todayPct}%"><span class="gantt2-today-label">сегодня</span></div>`
+    : '';
+
+  document.getElementById('gantt-wrap').innerHTML = `<div class="gantt2">${sectionsHtml}${ticksHtml}${todayHtml}</div>`;
+  bindInitPills();
+}
+
+function findInitiative(id) { return INITIATIVES.find(it => it.id === id); }
+// Next id within a workstream: reuse the numeric-suffix convention already used by its existing
+// ids (e.g. "2.1".."2.4" -> prefix "2", next "2.5"). Empty workstream falls back to its `order` as prefix.
+function generateInitId(wsKey) {
+  const items = INITIATIVES.filter(it => it.workstream === wsKey);
+  let prefix, maxNum;
+  if (items.length === 0) {
+    const ws = WORKSTREAMS.find(w => w.key === wsKey);
+    prefix = String(ws ? ws.order : INITIATIVES.length + 1);
+    maxNum = 0;
+  } else {
+    const prefixCounts = {};
+    items.forEach(it => {
+      const idx = it.id.lastIndexOf('.');
+      const p = idx === -1 ? it.id : it.id.slice(0, idx);
+      prefixCounts[p] = (prefixCounts[p] || 0) + 1;
+    });
+    prefix = Object.entries(prefixCounts).sort((a, b) => b[1] - a[1])[0][0];
+    maxNum = 0;
+    items.forEach(it => {
+      const idx = it.id.lastIndexOf('.');
+      if (idx === -1 || it.id.slice(0, idx) !== prefix) return;
+      const num = parseInt(it.id.slice(idx + 1), 10);
+      if (!isNaN(num) && num > maxNum) maxNum = num;
+    });
+  }
+  let id = `${prefix}.${maxNum + 1}`;
+  while (INITIATIVES.some(it => it.id === id)) { maxNum++; id = `${prefix}.${maxNum + 1}`; }
+  return id;
+}
+// New initiative starts the day after the latest end-date already in the workstream (so it always
+// sorts last, chronologically, within its own section), running for 14 days. Empty section -> today.
+function nextInitDefaults(wsKey) {
+  const items = INITIATIVES.filter(it => it.workstream === wsKey);
+  const startBase = items.length === 0
+    ? todayDate()
+    : addDays(items.reduce((max, it) => { const e = parseDate(it.end); return e > max ? e : max; }, parseDate(items[0].end)), 1);
+  return { start: isoOf(startBase), end: isoOf(addDays(startBase, 14)) };
+}
+function generateWsKey(name) {
+  const base = name.toLowerCase().replace(/[^a-zа-я0-9]+/gi, '_').replace(/^_+|_+$/g, '') || 'ws';
+  let key = base, n = 1;
+  while (WORKSTREAMS.some(w => w.key === key)) { key = base + '_' + (++n); }
+  return key;
+}
+function renderAll() {
+  saveInitiativesData();
+  renderGantt();
+  renderReg();
+  rebuildOwnerFilterOptions();
+  applyOwnerFilter();
+}
+
+function renderReg() {
+  const wsSorted = [...WORKSTREAMS].sort((a, b) => a.order - b.order);
+  let rowsHtml = '';
+  wsSorted.forEach(ws => {
+    const items = INITIATIVES.filter(it => it.workstream === ws.key).sort(compareInitIds);
+    rowsHtml += `<tr class="ws-group-hdr"><td colspan="10">
+      <input class="reg-input ws-title-input" data-ws="${ws.key}" value="${ws.title.replace(/"/g,'&quot;')}" style="font-weight:700;width:260px;display:inline-block;">
+      порядок <input type="number" class="reg-input ws-order-input" data-ws="${ws.key}" value="${ws.order}" style="width:48px;display:inline-block;">
+      <button class="btn-add-init" data-ws="${ws.key}">+ добавить инициативу</button>
+    </td></tr>`;
+    items.forEach(it => {
+      const owner = loadInitOwner(it.id);
+      rowsHtml += `<tr class="${it.critical ? 'reg-critical' : ''}" data-owner-row="${it.id}" data-owner-store="${INIT_OWNER_PREFIX}">
+        <td><input class="reg-input" data-reg="id" data-id="${it.id}" style="min-width:unset;width:100%;" value="${it.id.replace(/"/g,'&quot;')}"></td>
+        <td><input class="reg-input" data-reg="title" data-id="${it.id}" value="${it.title.replace(/"/g,'&quot;')}"></td>
+        <td><select class="reg-select" data-reg="workstream" data-id="${it.id}">
+          ${wsSorted.map(w => `<option value="${w.key}"${it.workstream === w.key ? ' selected' : ''}>${w.title}</option>`).join('')}
+        </select></td>
+        <td><input class="reg-date" type="date" data-reg="start" data-id="${it.id}" value="${it.start}"></td>
+        <td><input class="reg-date" type="date" data-reg="end" data-id="${it.id}" value="${it.end}"></td>
+        <td><select class="reg-select" data-reg="status" data-id="${it.id}">
+          ${Object.entries(STATUS_META).map(([k, m]) => `<option value="${k}"${it.status === k ? ' selected' : ''}>${m.label}</option>`).join('')}
+        </select></td>
+        <td><input class="owner-input" data-id="${it.id}" placeholder="—" style="${owner.trim() === '' ? 'color:var(--wf-neg);font-weight:600;' : ''}" value="${owner.replace(/"/g,'&quot;')}"></td>
+        <td><button class="btn-del-init" data-id="${it.id}" title="Удалить">✕</button></td>
+      </tr>`;
+    });
+  });
+  document.getElementById('reg-wrap').innerHTML = `
+    <table class="reg">
+      <tr><th>ID</th><th>Инициатива</th><th>Раздел</th><th>Начало</th><th>Окончание</th><th>Статус</th><th>Владелец</th><th></th></tr>
+      ${rowsHtml}
+    </table>
+    <div class="ws-new-form">
+      <input type="text" id="new-ws-name" placeholder="Название нового раздела">
+      <button id="btn-add-ws">+ новый раздел</button>
+    </div>`;
+  bindRegInputs();
+}
+
+function bindRegInputs() {
+  const wrap = document.getElementById('reg-wrap');
+
+  wrap.querySelectorAll('input.reg-input[data-reg], select.reg-select[data-reg]').forEach(el => {
+    el.addEventListener('change', () => {
+      const it = findInitiative(el.dataset.id);
+      if (!it) return;
+      const field = el.dataset.reg;
+      if (field === 'id') {
+        const newId = el.value.trim();
+        if (!newId || INITIATIVES.some(o => o !== it && o.id === newId)) { alert('ID должен быть непустым и уникальным'); el.value = it.id; return; }
+        const oldId = it.id;
+        it.id = newId;
+        INITIATIVES.forEach(o => { o.dependsOn = o.dependsOn.map(d => d === oldId ? newId : d); });
+      } else if (field === 'dependsOn') {
+        it.dependsOn = el.value.split(',').map(s => s.trim()).filter(Boolean);
+      } else {
+        it[field] = el.value;
+      }
+      renderAll();
+    });
+  });
+
+  // Native <input type="date"> fires 'change' the instant its 3 segments form ANY complete
+  // date — including transiently while a segment is still mid-typing (e.g. year "20" alone
+  // can already read as a complete-but-wrong date to the browser). Committing + re-rendering
+  // on every such 'change' destroys/recreates the input mid-edit, which looks like the date
+  // "resets" after just 1-2 digits. Fix: only commit on 'blur', once the user is actually
+  // done editing that field — nothing runs while they're still typing.
+  wrap.querySelectorAll('input.reg-date[data-reg]').forEach(el => {
+    el.addEventListener('blur', () => {
+      const it = findInitiative(el.dataset.id);
+      if (!it) return;
+      if (!el.value) { el.value = it[el.dataset.reg]; return; }
+      if (el.value === it[el.dataset.reg]) return;
+      it[el.dataset.reg] = el.value;
+      renderAll();
+    });
+  });
+
+  wrap.querySelectorAll('input.reg-check[data-reg="critical"]').forEach(el => {
+    el.addEventListener('change', () => {
+      const it = findInitiative(el.dataset.id);
+      if (it) it.critical = el.checked;
+      renderAll();
+    });
+  });
+
+  wrap.querySelectorAll('input.owner-input[data-id]').forEach(inp => {
+    inp.addEventListener('input', () => {
+      saveInitOwner(inp.dataset.id, inp.value);
+      inp.style.color = inp.value.trim() === '' ? 'var(--wf-neg)' : '';
+      renderGantt();
+      rebuildOwnerFilterOptions();
+      applyOwnerFilter();
+    });
+  });
+
+  wrap.querySelectorAll('.btn-add-init').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const wsKey = btn.dataset.ws;
+      const newId = generateInitId(wsKey);
+      const { start, end } = nextInitDefaults(wsKey);
+      INITIATIVES.push({ id: newId, workstream: wsKey, title: 'Новая инициатива', start, end, critical: false, dependsOn: [], status: 'todo' });
+      renderAll();
+    });
+  });
+
+  wrap.querySelectorAll('.btn-del-init').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      if (!confirm(`Удалить инициативу ${id}?`)) return;
+      INITIATIVES = INITIATIVES.filter(it => it.id !== id);
+      INITIATIVES.forEach(o => { o.dependsOn = o.dependsOn.filter(d => d !== id); });
+      renderAll();
+    });
+  });
+
+  wrap.querySelectorAll('.ws-order-input').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const ws = WORKSTREAMS.find(w => w.key === inp.dataset.ws);
+      if (ws) ws.order = Number(inp.value) || 0;
+      renderAll();
+    });
+  });
+  wrap.querySelectorAll('.ws-title-input').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const ws = WORKSTREAMS.find(w => w.key === inp.dataset.ws);
+      if (ws) ws.title = inp.value.trim() || ws.title;
+      renderAll();
+    });
+  });
+
+  const addWsBtn = document.getElementById('btn-add-ws');
+  if (addWsBtn) addWsBtn.addEventListener('click', () => {
+    const nameInput = document.getElementById('new-ws-name');
+    const name = nameInput.value.trim();
+    if (!name) return;
+    const key = generateWsKey(name);
+    const maxOrder = WORKSTREAMS.reduce((m, w) => Math.max(m, w.order), 0);
+    WORKSTREAMS.push({ key, title: name, order: maxOrder + 1 });
+    renderAll();
+  });
+}
+
+/* ---------- export: bake current INITIATIVES / WORKSTREAMS / owner-defaults into a downloadable snapshot ---------- */
+function replaceMarkerBlock(code, name, replacement) {
+  const re = new RegExp('/\\*__' + name + '_START__\\*/[\\s\\S]*?/\\*__' + name + '_END__\\*/');
+  return code.replace(re, '/*__' + name + '_START__*/\n' + replacement + '\n/*__' + name + '_END__*/');
+}
+function buildExportHtml() {
+  const doc = document.documentElement.cloneNode(true);
+  const scriptTag = doc.querySelector('script');
+  let code = scriptTag.textContent;
+
+  const initOwnerDefaults = {};
+  INITIATIVES.forEach(it => { const v = loadInitOwner(it.id); if (v.trim()) initOwnerDefaults[it.id] = v; });
+  const plOwnerDefaults = {};
+  INDIRECT.concat(DIRECT).forEach(row => { const v = loadPlOwner(row.id); if (v.trim()) plOwnerDefaults[row.id] = v; });
+  const problemText = document.getElementById('problem-text').value;
+
+  code = replaceMarkerBlock(code, 'INITIATIVES', 'let INITIATIVES = ' + JSON.stringify(INITIATIVES, null, 2) + ';');
+  code = replaceMarkerBlock(code, 'WORKSTREAMS', 'let WORKSTREAMS = ' + JSON.stringify(WORKSTREAMS, null, 2) + ';');
+  code = replaceMarkerBlock(code, 'OWNER_DEFAULTS', 'let INIT_OWNER_DEFAULTS = ' + JSON.stringify(initOwnerDefaults, null, 2) + ';');
+  code = replaceMarkerBlock(code, 'INDIRECT', 'let INDIRECT = ' + JSON.stringify(INDIRECT, null, 2) + ';');
+  code = replaceMarkerBlock(code, 'DIRECT', 'let DIRECT = ' + JSON.stringify(DIRECT, null, 2) + ';');
+  code = replaceMarkerBlock(code, 'PL_OWNER_DEFAULTS', 'let PL_OWNER_DEFAULTS = ' + JSON.stringify(plOwnerDefaults, null, 2) + ';');
+  code = replaceMarkerBlock(code, 'PROBLEM_DEFAULT', 'const DEFAULT_PROBLEM = ' + JSON.stringify(problemText) + ';');
+
+  scriptTag.textContent = code;
+  return '<!DOCTYPE html>\n' + doc.outerHTML;
+}
+function exportSnapshot() {
+  const blob = new Blob([buildExportHtml()], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'FCF_Bridge_Complete_' + isoOf(todayDate()) + '.html';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/* ================= Owner filter (shared: P&L rows + initiatives) ================= */
+function loadOwnerByPrefix(prefix, id) {
+  const v = cloudGet(prefix + id);
+  if (v !== null) return v;
+  if (prefix === INIT_OWNER_PREFIX) return INIT_OWNER_DEFAULTS[id] || '';
+  if (prefix === OWNER_KEY_PREFIX) return PL_OWNER_DEFAULTS[id] || '';
+  return '';
+}
+function allOwnerRowNodes() { return document.querySelectorAll('[data-owner-row]'); }
+function collectOwners() {
+  const names = new Set();
+  allOwnerRowNodes().forEach(tr => {
+    const v = loadOwnerByPrefix(tr.dataset.ownerStore, tr.dataset.ownerRow);
+    if (v.trim()) names.add(v.trim());
+  });
+  return Array.from(names).sort();
+}
+function rebuildOwnerFilterOptions() {
+  const sel = document.getElementById('ownerFilter');
+  const cur = sel.value;
+  const owners = collectOwners();
+  sel.innerHTML = '<option value="">Все</option><option value="__none__">Без ответственного</option>' +
+    owners.map(o => `<option value="${o.replace(/"/g,'&quot;')}">${o}</option>`).join('');
+  if (Array.from(sel.options).some(o => o.value === cur)) sel.value = cur;
+}
+function applyOwnerFilter() {
+  const filterVal = document.getElementById('ownerFilter').value;
+  allOwnerRowNodes().forEach(tr => {
+    if (!filterVal) { tr.classList.remove('dimmed'); return; }
+    const owner = loadOwnerByPrefix(tr.dataset.ownerStore, tr.dataset.ownerRow).trim();
+    const matches = filterVal === '__none__' ? owner === '' : owner === filterVal;
+    tr.classList.toggle('dimmed', !matches);
+  });
+}
+
+function initTheme() {
+  const btn = document.getElementById('theme-toggle');
+  const saved = localStorage.getItem('fcfBridgeRoadmap_theme');
+  if (saved) document.documentElement.setAttribute('data-theme', saved);
+  btn.addEventListener('click', () => {
+    const cur = document.documentElement.getAttribute('data-theme')
+      || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const next = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('fcfBridgeRoadmap_theme', next);
+  });
+}
+
+async function main() {
+  await bootCloud();
+  loadSaved(INDIRECT);
+  loadSaved(DIRECT);
+  recomputeIndirect();
+  recomputeDirect();
+  initProblem();
+  renderRings();
+  renderTotals();
+  renderFullTable();
+  renderDirectTable();
+  loadInitiativesData();
+  renderGantt();
+  renderReg();
+  bindValInputs();
+  bindStatusDots();
+  bindOwnerInputs();
+  bindInitPills();
+  rebuildOwnerFilterOptions();
+  document.getElementById('ownerFilter').addEventListener('change', applyOwnerFilter);
+  applyOwnerFilter();
+  document.getElementById('btn-export').addEventListener('click', exportSnapshot);
+  document.getElementById('btn-save-init').addEventListener('click', () => {
+    saveInitiativesData();
+    const el = document.getElementById('save-confirm');
+    el.style.display = 'inline';
+    clearTimeout(window.__saveConfirmTimer);
+    window.__saveConfirmTimer = setTimeout(() => { el.style.display = 'none'; }, 2000);
+  });
+  initTheme();
+}
+main();
+</script>
+</body>
+</html>

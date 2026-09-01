@@ -199,9 +199,11 @@
   .gantt2-section-title { display: flex; align-items: center; gap: 8px; background: var(--page); font-weight: 700; font-size: 10px; padding: 4px 7px; border-top: 2px solid var(--text-primary); border-bottom: 2px solid var(--text-primary); position: relative; z-index: 2; }
   .gantt2-section-title .ws-count { font-weight: 600; color: var(--text-muted); font-size: 9px; margin-left: auto; }
   .gantt2-body { position: relative; }
-  .gantt2-lane-row { position: relative; height: 26px; border-bottom: 1px solid var(--grid); }
+  .gantt2-lane-row { position: relative; height: 36px; border-bottom: 1px solid var(--grid); }
   .gantt2-item { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
-  .gantt2-bar { position: absolute; top: 3px; bottom: 3px; min-width: 24px; border-radius: 4px; background: var(--gantt-bar); display: flex; align-items: center; padding: 0 5px; font-size: 9px; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; z-index: 2; }
+  .gantt2-bar { position: absolute; top: 3px; bottom: 3px; min-width: 24px; border-radius: 4px; background: var(--gantt-bar); display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding: 2px 5px; color: var(--text-primary); overflow: hidden; z-index: 2; }
+  .gantt2-bar-id { font-size: 9px; font-weight: 700; line-height: 1.1; white-space: nowrap; }
+  .gantt2-bar-title { font-size: 8px; font-weight: 500; line-height: 1.1; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   .gantt2-bar.st-done { background: var(--good-text); color: #fff; }
   .gantt2-bar.st-in_progress { background: var(--pending-text); color: #fff; }
   .gantt2-bar.critical { outline: 2px solid var(--wf-total); outline-offset: -2px; }
@@ -809,20 +811,13 @@ function compareInitIds(a, b) {
   return 0;
 }
 
-/* ---- lane assignment: greedy interval scheduling — recomputed on every render, never cached ----
-   Sort by start date, then place each item in the first lane whose last-placed end date
-   is before this item's start (no overlap); otherwise open a new lane. Two initiatives with
-   overlapping dates in the same workstream can never land in the same lane by construction. */
+/* ---- lane assignment: one dedicated lane per initiative, ordered by id — recomputed on every
+   render, never cached. Each id always gets its own row (sorted by compareInitIds), so e.g. 4.1
+   and 4.4 never share a lane just because their dates don't overlap. */
 function assignLanes(items) {
-  const sorted = [...items].sort((a, b) => parseDate(a.start) - parseDate(b.start) || compareInitIds(a, b));
-  const laneEnds = [];
-  const withLanes = sorted.map(it => {
-    const s = parseDate(it.start), e = parseDate(it.end);
-    let lane = laneEnds.findIndex(end => end < s);
-    if (lane === -1) { lane = laneEnds.length; laneEnds.push(e); } else { laneEnds[lane] = e; }
-    return { ...it, lane };
-  });
-  return { items: withLanes, laneCount: laneEnds.length };
+  const sorted = [...items].sort(compareInitIds);
+  const withLanes = sorted.map((it, lane) => ({ ...it, lane }));
+  return { items: withLanes, laneCount: withLanes.length };
 }
 
 function groupByWorkstream() {
@@ -833,32 +828,9 @@ function groupByWorkstream() {
   });
 }
 
-function measureTextWidth(text, font) {
-  if (!window.__ganttMeasureCtx) window.__ganttMeasureCtx = document.createElement('canvas').getContext('2d');
-  window.__ganttMeasureCtx.font = font;
-  return window.__ganttMeasureCtx.measureText(text).width;
-}
-// Fits "id title" into maxPx by shrinking the title (never the id) one char at a time, appending "…".
-// Returns '' if even the bare id doesn't fit — caller then shows nothing rather than an overlapping label.
-function fitLabelToWidth(id, title, maxPx, font) {
-  if (maxPx <= 0) return '';
-  const full = `${id} ${title}`;
-  if (measureTextWidth(full, font) <= maxPx) return full;
-  let t = title;
-  while (t.length > 0) {
-    const candidate = `${id} ${t}…`;
-    if (measureTextWidth(candidate, font) <= maxPx) return candidate;
-    t = t.slice(0, -1);
-  }
-  return measureTextWidth(id, font) <= maxPx ? id : '';
-}
-
 function renderGantt() {
   const { minDate, maxDate } = computeDateRange();
   const groups = groupByWorkstream();
-  const containerWidthPx = document.getElementById('gantt-wrap').clientWidth || 1000;
-  const BAR_FONT = '700 9px Inter, Arial, sans-serif';
-
   let sectionsHtml = '';
   groups.forEach(({ ws, items, laneCount }) => {
     const assignedCount = items.filter(it => loadInitOwner(it.id).trim() !== '').length;
@@ -870,14 +842,15 @@ function renderGantt() {
         const width = Math.max(pctOf(parseDate(it.end), minDate, maxDate) - left, 0.6);
         const owner = loadInitOwner(it.id);
         const tt = `${it.id} ${it.title} | ${it.start} → ${it.end} | ${STATUS_META[it.status].label}${owner ? ' | Ответственный: ' + owner : ''}`.replace(/"/g, '&quot;');
-        // Label is always rendered INSIDE the bar (never below it): id + title, truncated with an
-        // ellipsis to whatever actually fits the bar's own pixel width (measured via canvas, not
-        // estimated), falling back to the bare id if even "id + …" doesn't fit. CSS min-width on the
-        // bar guarantees there's always at least enough room for the id.
-        const barWidthPx = Math.max(width / 100 * containerWidthPx, 24);
-        const barInner = fitLabelToWidth(it.id, it.title, barWidthPx - 10, BAR_FONT) || it.id;
+        // Label always rendered INSIDE the bar, on two lines: id (always fully visible — it's short
+        // and the bar has a CSS min-width for it) and title below it, truncated with a CSS ellipsis
+        // if the bar isn't wide enough for the full title. Bar height (not width) grows to fit both
+        // lines — width still maps 1:1 to the real date range, only the row got taller.
         return `<div class="gantt2-item" id="init-${it.id}" data-owner-row="${it.id}" data-owner-store="${INIT_OWNER_PREFIX}">
-          <div class="gantt2-bar st-${it.status}${it.critical ? ' critical' : ''}" style="left:${left}%;width:${width}%" title="${tt}">${barInner}</div>
+          <div class="gantt2-bar st-${it.status}${it.critical ? ' critical' : ''}" style="left:${left}%;width:${width}%" title="${tt}">
+            <span class="gantt2-bar-id">${it.id}</span>
+            <span class="gantt2-bar-title">${it.title}</span>
+          </div>
         </div>`;
       }).join('')}</div>`;
     }
